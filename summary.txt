@@ -1,0 +1,7 @@
+Unknown has reappointed Auditor's Firm as its statutory auditor for the financial year 2022-23, effective from an unspecified date. The appointment was approved in the Annual General Meeting held on the same date. All required documents, including the board resolution, have been submitted via Form ADT-1.
+
+Attachment Summaries:
+- Attachment '2021' extracted. Content type not identified.
+- Attachment '2709' extracted. Content type not identified.
+- Attachment '2710' extracted. Content type not identified.
+- Error extracting attachment 3: 'utf-8' codec can't encode characters in position 14-15: surrogates not allowed
