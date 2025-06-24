@@ -56,11 +56,11 @@ def parse_data(text, form_fields):
 
     # Map form field names to data keys
     field_mappings = {
-        "company_name": ["CompanyName_C", "Name of the company"],
-        "cin": ["CIN_C", "Corporate identity number"],
-        "registered_office": ["CompanyAdd_C", "Address of the registered office"],
+        "company_name": ["CompanyName_C"],
+        "cin": ["CIN_C"],
+        "registered_office": ["CompanyAdd_C"],
         "appointment_date": ["DateAnnualGenMeet_D", "DateOfAppSect_D"],
-        "auditor_name": ["NameAuditorFirm_C", "Name of the auditor"],
+        "auditor_name": ["NameAuditorFirm_C"],
         "auditor_address": [
             "permaddress2a_C",
             "permaddress2b_C",
@@ -68,7 +68,7 @@ def parse_data(text, form_fields):
             "State_P",
             "Pin_C",
         ],
-        "auditor_frn_or_membership": ["MemberShNum", "Membership Number"],
+        "auditor_frn_or_membership": ["MemberShNum"],
         "appointment_type": ["DropDownList1"],
     }
 
@@ -88,23 +88,31 @@ def parse_data(text, form_fields):
                             "Pin_C",
                         ]:
                             if addr_field in form_fields and form_fields[addr_field]:
-                                address_parts.append(form_fields[addr_field])
-                        data[key] = ", ".join(address_parts)
+                                address_parts.append(form_fields[addr_field].strip())
+                        data[key] = ", ".join(filter(None, address_parts))
+                    elif key == "registered_office":
+                        # Clean carriage returns
+                        data[key] = form_value.replace("\r", ", ").strip()
+                    elif key == "appointment_type":
+                        # Map ARGM to Reappointment
+                        data[key] = (
+                            "Reappointment" if form_value == "ARGM" else form_value
+                        )
                     else:
-                        data[key] = form_value
+                        data[key] = form_value.strip()
                     break
             if data[key]:
                 break
 
     # Fallback to text extraction with regex if form fields are missing
     patterns = {
-        "company_name": r"Name of the company\s*[:\s\n]*(.*?)(?:\n|$)",
-        "cin": r"Corporate identity number \(CIN\)\s*[:\s\n]*([A-Z0-9]{21})(?:\n|$)",
-        "registered_office": r"Address of the registered office\s*[:\s\n]*(.*?)(?:\n|$)",
-        "appointment_date": r"Date of appointment\s*[:\s\n]*(\d{2}/\d{2}/\d{4})(?:\n|$)",
-        "auditor_name": r"Name of the auditor or auditor's firm\s*[:\s\n]*(.*?)(?:\n|$)",
-        "auditor_address": r"Address of the Auditor\s*[:\s\n]*(.*?)(?:\n|$)",
-        "auditor_frn_or_membership": r"Membership Number of auditor or auditor's firm's registration number\s*[:\s\n]*(.*?)(?:\n|$)",
+        "company_name": r"Name of the company\s*[:\s\n]+([^\n]+)(?:\n|$)",
+        "cin": r"Corporate identity number \(CIN\)\s*[:\s\n]+([A-Z0-9]{21})(?:\n|$)",
+        "registered_office": r"Address of the registered office\s*[:\s\n]+([^\n]+)(?:\n|$)",
+        "appointment_date": r"Date of appointment\s*[:\s\n]+(\d{2}/\d{2}/\d{4})(?:\n|$)",
+        "auditor_name": r"Name of the auditor or auditor's firm\s*[:\s\n]+([^\n]+)(?:\n|$)",
+        "auditor_address": r"Address of the Auditor\s*[:\s\n]+([^\n]+)(?:\n|$)",
+        "auditor_frn_or_membership": r"Membership Number of auditor or auditor's firm's registration number\s*[:\s\n]+([^\n]+)(?:\n|$)",
         "appointment_type": r"(New Appointment|Reappointment)\s*(?:\n|$)",
     }
 
@@ -160,20 +168,27 @@ def generate_summary(data):
 
 def sanitize_filename(filename):
     """Sanitize filename to remove invalid characters."""
-    # Normalize Unicode characters
-    filename = (
-        unicodedata.normalize("NFKD", filename)
-        .encode("ascii", "ignore")
-        .decode("ascii")
-    )
-    # Keep only alphanumeric, underscores, hyphens, and dots
-    valid_chars = string.ascii_letters + string.digits + "_-."
-    filename = "".join(c if c in valid_chars else "_" for c in filename)
-    # Ensure filename is not empty and has .pdf extension
-    filename = filename or f"attachment_{hash(filename)}"
-    if not filename.endswith(".pdf"):
-        filename += ".pdf"
-    return filename
+    try:
+        # Normalize Unicode characters
+        filename = (
+            unicodedata.normalize("NFKD", filename)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
+        # Keep only alphanumeric, underscores, hyphens, spaces, and dots
+        valid_chars = string.ascii_letters + string.digits + "_-. "
+        filename = "".join(c if c in valid_chars else "_" for c in filename)
+        # Replace multiple underscores with a single one
+        filename = re.sub(r"_+", "_", filename).strip("_")
+        # Ensure filename is not empty and has .pdf extension
+        if not filename:
+            filename = f"attachment_{hash(filename)}"
+        if not filename.endswith(".pdf"):
+            filename += ".pdf"
+        return filename
+    except Exception as e:
+        print(f"Error sanitizing filename '{filename}': {str(e)}")
+        return f"attachment_{hash(filename)}.pdf"
 
 
 def extract_attachments(pdf_path, form_fields):
@@ -185,7 +200,7 @@ def extract_attachments(pdf_path, form_fields):
         if count == 0:
             attachment_summaries.append("No embedded attachments found in the PDF.")
         else:
-            # Get attachment names from form fields if available
+            # Get attachment names from form fields
             attachment_names = {}
             if "HiddenList_L[0]" in form_fields:
                 for entry in form_fields["HiddenList_L[0]"].split(":"):
@@ -212,7 +227,7 @@ def extract_attachments(pdf_path, form_fields):
                         f.write(file_data)
                     # Summarize attachment
                     summary = f"Attachment '{file_name}' extracted. "
-                    if "consent" in file_name.lower() or "letter" in file_name.lower():
+                    if "consent" in file_name.lower():
                         summary += "Likely contains auditor's consent letter."
                     elif "resolution" in file_name.lower():
                         summary += "Likely contains board resolution approving the appointment."
